@@ -3,6 +3,7 @@ package databaseRoleMember
 import (
 	"context"
 	"errors"
+
 	"github.com/PGSSoft/terraform-provider-mssql/internal/core/resource"
 	common2 "github.com/PGSSoft/terraform-provider-mssql/internal/services/common"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -82,9 +83,11 @@ func (r *res) Create(ctx context.Context, req resource.CreateRequest[resourceDat
 
 func (r *res) Read(ctx context.Context, req resource.ReadRequest[resourceData], resp *resource.ReadResponse[resourceData]) {
 	var (
-		id   common2.DbObjectMemberId[sql.DatabaseRoleId, sql.GenericDatabasePrincipalId]
-		db   sql.Database
-		role sql.DatabaseRole
+		id               common2.DbObjectMemberId[sql.DatabaseRoleId, sql.GenericDatabasePrincipalId]
+		db               sql.Database
+		role             sql.DatabaseRole
+		user             sql.User
+		roleMemberExists bool
 	)
 
 	req.
@@ -92,8 +95,23 @@ func (r *res) Read(ctx context.Context, req resource.ReadRequest[resourceData], 
 			id = common2.ParseDbObjectMemberId[sql.DatabaseRoleId, sql.GenericDatabasePrincipalId](ctx, req.State.Id.ValueString())
 		}).
 		Then(func() { db = sql.GetDatabase(ctx, req.Conn, id.DbId) }).
-		Then(func() { role = sql.GetDatabaseRole(ctx, db, id.ObjectId) }).
 		Then(func() {
+			role = sql.GetDatabaseRole(ctx, db, id.ObjectId)
+		}).
+		Then(func() {
+			user = sql.GetUserByIdOrNil(ctx, db, req.State.MemberId.ValueString())
+		}).
+		Then(func() {
+			if user != nil {
+				roleMemberExists = sql.RoleMemberExists(ctx, db, req.State.RoleId.ValueString(), req.State.MemberId.ValueString())
+			} else {
+				// if user does not exist, then role member also cannot exist
+			}
+		}).
+		Then(func() {
+			if !roleMemberExists {
+				// role member does not exist, so do not set any state (state is null)
+			}
 			if role.HasMember(ctx, id.MemberId) {
 				req.State.RoleId = types.StringValue(id.DbObjectId.String())
 				req.State.MemberId = types.StringValue(id.GetMemberId().String())

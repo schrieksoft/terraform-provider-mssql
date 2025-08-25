@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
 	"github.com/PGSSoft/terraform-provider-mssql/internal/utils"
 )
 
@@ -72,6 +73,22 @@ func GetDatabaseRoleByName(ctx context.Context, db Database, name string) Databa
 
 		res.id = DatabaseRoleId(id.Int64)
 		return res
+	})
+}
+
+func RoleMemberExists(ctx context.Context, db Database, roleId string, memberId string) bool {
+	return WithConnection(ctx, db.connect, func(conn *sql.DB) bool {
+		id := sql.NullInt64{}
+
+		if err := conn.QueryRowContext(ctx, "SELECT role_principal_id, member_principal_id FROM sys.database_role_members WHERE role_principal_id = @p1, member_principal_id=@p2", roleId, memberId).Scan(&id); err != nil {
+			return false
+		}
+
+		if !id.Valid {
+			return false
+		}
+
+		return true
 	})
 }
 

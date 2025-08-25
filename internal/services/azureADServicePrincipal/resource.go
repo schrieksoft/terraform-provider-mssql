@@ -3,6 +3,7 @@ package azureADServicePrincipal
 import (
 	"context"
 	"fmt"
+
 	"github.com/PGSSoft/terraform-provider-mssql/internal/core/resource"
 	common2 "github.com/PGSSoft/terraform-provider-mssql/internal/services/common"
 	"github.com/PGSSoft/terraform-provider-mssql/internal/validators"
@@ -68,12 +69,18 @@ func (r *res) Create(ctx context.Context, req resource.CreateRequest[resourceDat
 	)
 
 	req.
-		Then(func() { db = common2.GetResourceDb(ctx, req.Conn, req.Plan.DatabaseId.ValueString()) }).
-		Then(func() { user = sql.CreateUser(ctx, db, req.Plan.toSettings()) }).
+		Then(func() {
+			db = common2.GetResourceDb(ctx, req.Conn, req.Plan.DatabaseId.ValueString())
+		}).
+		Then(func() {
+			user = sql.CreateUser(ctx, db, req.Plan.toSettings())
+		}).
 		Then(func() {
 			req.Plan.Id = types.StringValue(common2.DbObjectId[sql.UserId]{DbId: db.GetId(ctx), ObjectId: user.GetId(ctx)}.String())
 		}).
-		Then(func() { resp.State = req.Plan })
+		Then(func() {
+			resp.State = req.Plan
+		})
 }
 
 func (r *res) Read(ctx context.Context, req resource.ReadRequest[resourceData], resp *resource.ReadResponse[resourceData]) {
@@ -84,13 +91,24 @@ func (r *res) Read(ctx context.Context, req resource.ReadRequest[resourceData], 
 	)
 
 	req.
-		Then(func() { id = common2.ParseDbObjectId[sql.UserId](ctx, req.State.Id.ValueString()) }).
-		Then(func() { db = sql.GetDatabase(ctx, req.Conn, id.DbId) }).
-		Then(func() { user = sql.GetUser(ctx, db, id.ObjectId) }).
 		Then(func() {
-			state := req.State.withSettings(ctx, user.GetSettings(ctx))
-			state.DatabaseId = types.StringValue(fmt.Sprint(id.DbId))
-			resp.SetState(state)
+			id = common2.ParseDbObjectId[sql.UserId](ctx, req.State.Id.ValueString())
+		}).
+		Then(func() {
+			db = sql.GetDatabase(ctx, req.Conn, id.DbId)
+		}).
+		Then(func() {
+			//user = sql.GetUser(ctx, db, id.ObjectId)
+			user = sql.GetUserByNameOrNil(ctx, db, req.State.Name.ValueString())
+		}).
+		Then(func() {
+			if user == nil {
+				// do nothing, so that there is no state
+			} else {
+				state := req.State.withSettings(ctx, user.GetSettings(ctx))
+				state.DatabaseId = types.StringValue(fmt.Sprint(id.DbId))
+				resp.SetState(state)
+			}
 		})
 }
 
@@ -110,6 +128,12 @@ func (r *res) Delete(ctx context.Context, req resource.DeleteRequest[resourceDat
 			db = common2.GetResourceDb(ctx, req.Conn, req.State.DatabaseId.ValueString())
 			id = common2.ParseDbObjectId[sql.UserId](ctx, req.State.Id.ValueString())
 		}).
-		Then(func() { user = sql.GetUser(ctx, db, id.ObjectId) }).
-		Then(func() { user.Drop(ctx) })
+		Then(func() {
+			user = sql.GetUser(ctx, db, id.ObjectId)
+		}).
+		Then(func() {
+			if req.State.Id.ValueString() != "" {
+				user.Drop(ctx)
+			}
+		})
 }

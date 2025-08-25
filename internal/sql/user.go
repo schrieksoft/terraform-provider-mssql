@@ -90,6 +90,46 @@ func GetUserByName(ctx context.Context, db Database, name string) User {
 	})
 }
 
+func GetUserByNameOrNil(ctx context.Context, db Database, name string) User {
+	return WithConnection(ctx, db.connect, func(conn *sql.DB) User {
+		user := user{db: db}
+		id := sql.NullInt32{}
+		err := conn.QueryRowContext(ctx, "SELECT USER_ID(@p1)", name).Scan(&id)
+		if err != nil {
+			//utils.AddError(ctx, "Failed to resolve user ID", err)
+			return nil
+		}
+
+		if !id.Valid {
+			//utils.AddError(ctx, "User does not exist", errors.New("user does not exist"))
+			return nil
+		}
+
+		user.id = UserId(id.Int32)
+		return user
+	})
+}
+
+func GetUserByIdOrNil(ctx context.Context, db Database, id string) User {
+	return WithConnection(ctx, db.connect, func(conn *sql.DB) User {
+		user := user{db: db}
+		id := sql.NullInt32{}
+		err := conn.QueryRowContext(ctx, "SELECT uid FROM sys.sysusers WHERE uid = @p1", id).Scan(&id)
+		if err != nil {
+			return nil
+		}
+
+		if !id.Valid {
+			return nil
+		}
+
+		user.id = UserId(id.Int32)
+		return user
+	})
+}
+
+
+
 func GetUsers(ctx context.Context, db Database) map[UserId]User {
 	const errorSummary = "Failed to retrieve list of SQL users"
 
@@ -163,7 +203,30 @@ func (u user) Drop(ctx context.Context) {
 			return nil
 		}
 
-		_, err := conn.ExecContext(ctx, fmt.Sprintf("DROP USER [%s]", name))
+		cmd := `DECLARE @stmt nvarchar(max)
+		DECLARE @userPrincipalId int = 
+		(
+			SELECT [principal_id]
+			FROM sys.database_principals
+			WHERE [name] = @username
+		)
+		
+		DECLARE @crsr CURSOR
+		SET @crsr = CURSOR FOR SELECT [name] from sys.schemas WHERE principal_id = @userPrincipalId
+		DECLARE @schemaName VARCHAR(MAX)
+		
+		OPEN @crsr
+		FETCH NEXT FROM @crsr INTO @schemaName
+		WHILE @@FETCH_STATUS = 0
+		BEGIN
+			EXEC('ALTER AUTHORIZATION ON schema::[' + @schemaName + '] TO [dbo]')
+			FETCH NEXT FROM @crsr INTO @schemaName
+		END
+		SET @stmt = 'IF EXISTS (SELECT 1 FROM [sys].[database_principals] WHERE [name] = ' + QuoteName(@username, '''') + ') ' +
+					'DROP USER ' + QuoteName(@username)
+		EXEC (@stmt)`
+
+		_, err := conn.ExecContext(ctx, cmd, sql.Named("username", name))
 		if err != nil {
 			utils.AddError(ctx, "Failed to drop user", err)
 		}

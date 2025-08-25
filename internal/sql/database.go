@@ -4,8 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/PGSSoft/terraform-provider-mssql/internal/utils"
 	"strings"
+
+	"github.com/PGSSoft/terraform-provider-mssql/internal/utils"
 )
 
 const NullDatabaseId = DatabaseId(-1)
@@ -141,7 +142,46 @@ func (db *database) SetCollation(ctx context.Context, collation string) {
 
 func (db *database) Drop(ctx context.Context) {
 	settings := db.GetSettings(ctx)
-	db.conn.exec(ctx, fmt.Sprintf("DROP DATABASE [%s]", settings.Name))
+
+	// see https://stackoverflow.com/questions/1711840/how-do-i-specify-close-existing-connections-in-sql-script
+	cmd := `DECLARE @dbId int
+	DECLARE @isStatAsyncOn bit
+	DECLARE @jobId int
+	DECLARE @sqlString nvarchar(500)
+	
+	SELECT @dbId = database_id,
+		   @isStatAsyncOn = is_auto_update_stats_async_on
+	FROM sys.databases
+	WHERE name = '%s'
+	
+	IF @isStatAsyncOn = 1
+	BEGIN
+		ALTER DATABASE [%s] SET AUTO_UPDATE_STATISTICS_ASYNC OFF
+	
+		-- kill running jobs
+		DECLARE jobsCursor CURSOR FOR
+		SELECT job_id
+		FROM sys.dm_exec_background_job_queue
+		WHERE database_id = @dbId
+	
+		OPEN jobsCursor
+	
+		FETCH NEXT FROM jobsCursor INTO @jobId
+		WHILE @@FETCH_STATUS = 0
+		BEGIN
+			set @sqlString = 'KILL STATS JOB ' + STR(@jobId)
+			EXECUTE sp_executesql @sqlString
+			FETCH NEXT FROM jobsCursor INTO @jobId
+		END
+	
+		CLOSE jobsCursor
+		DEALLOCATE jobsCursor
+	END
+	
+	ALTER DATABASE [%s] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+	
+	DROP DATABASE [%s]`
+	db.conn.exec(ctx, fmt.Sprintf(cmd, settings.Name, settings.Name, settings.Name, settings.Name))
 }
 
 func (db *database) Query(ctx context.Context, script string) []map[string]string {
