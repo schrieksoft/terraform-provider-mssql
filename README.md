@@ -1,3 +1,8 @@
+# PLEASE NOTE
+
+This repository is a fork of https://github.com/PGSSoft/terraform-provider-mssql, which is a great terraform provider, but does not appear to be actively in development anymore. This fork was created not in order to continue the development, but mainly with the goal of adding robustness to operations involving Azure AD users and logins that have been externally deleted. Previously the provider would crash, now it will simply recognize that the resources no longer exist and will recreate them.
+
+
 # Terraform provider for MS SQL Server
 
 - [Usage docs](docs/index.md)
