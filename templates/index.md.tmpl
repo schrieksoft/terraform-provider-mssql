@@ -17,24 +17,20 @@ Provider username and password, using `sql_auth` field:
 ### Azure AD
 In case of Azure SQL connections, Azure Active Directory auth tokens can be used to authenticate.
 
-<br/>
 #### Service Principal
 Provide client ID (a.k.a. application ID), secret and tenant ID, using `azure_auth` field:
 {{tffile "examples/provider/aad_sp.tf"}}
 
-<br/>
 #### Default chained credentials
-When `azure_auth` value is set to empty object (`{}`), the provider uses chained credentials built from `EnvironmentCredential` -> `ManagedIdentityCredential` -> `AzureCLICredential`.
+When `azure_auth` value is set to empty object (`{}`), the provider uses the Azure SDK's `DefaultAzureCredential`, which tries environment variables, workload identity, managed identity and the Azure CLI, among others, in that order. Workload identity covers a pod on AKS with Azure Workload Identity, which sets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_FEDERATED_TOKEN_FILE`.
 See [DefaultAzureCredential docs](https://github.com/Azure/azure-sdk-for-go/wiki/Set-up-Your-Environment-for-Authentication#configure-defaultazurecredential) for details.
 
-<br/>
 #### Environment variables
 When `azure_auth` value is set to empty object (`{}`) and following environment variables are set, the env variable values will be used for authentication, taking precedence over `DefaultAzureCredential`.
 - `ARM_CLIENT_ID`
 - `ARM_CLIENT_SECRET`
 - `ARM_TENANT_ID`
 
-<br/>
 Example:
 {{tffile "examples/provider/aad_default.tf"}}
 
